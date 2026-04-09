@@ -70,6 +70,10 @@ Converts a `.cast` file into an animated SVG.
 termsnap export demo.cast                          # Output: demo.svg
 termsnap export demo.cast -o output.svg            # Custom output path
 termsnap export demo.cast --theme dracula          # Use a theme
+termsnap export demo.cast --speed 2                # 2x playback speed
+termsnap export demo.cast --max-idle 1             # Cap pauses to 1 second
+termsnap export demo.cast --title "my demo"        # Text in the title bar
+termsnap export demo.cast --crop                   # Trim empty rows from bottom
 termsnap export demo.cast --no-window              # No window chrome
 termsnap export demo.cast --still                  # Static screenshot (last frame)
 termsnap export demo.cast --font-size 16           # Larger text
@@ -77,11 +81,21 @@ termsnap export demo.cast --font-size 16           # Larger text
 
 ### `termsnap snap`
 
-Record + export in one step.
+Record + export in one step. Supports all `export` flags.
 
 ```bash
 termsnap snap -o demo.svg
-termsnap snap -o demo.svg --theme catppuccin
+termsnap snap -o demo.svg --theme catppuccin --speed 1.5
+```
+
+### `termsnap preview`
+
+Play back a recording in the terminal (like `asciinema play`).
+
+```bash
+termsnap preview demo.cast                # Real-time playback
+termsnap preview demo.cast --speed 3      # 3x speed
+termsnap preview demo.cast --max-idle 1   # Cap pauses
 ```
 
 ### `termsnap themes`
@@ -116,9 +130,12 @@ termsnap export demo.cast --theme nord
 ## Output Features
 
 - Animated SVG with CSS keyframes (no JavaScript)
-- macOS-style window chrome with traffic light buttons
+- macOS-style window chrome with optional title bar text
 - 8 color themes (One Dark, Dracula, Catppuccin, Nord, Gruvbox, Light, GitHub Dark, Tokyo Night)
 - Full 256-color + RGB support
+- Speed control and idle time capping
+- Automatic frame deduplication (identical consecutive frames are merged)
+- Crop mode to trim empty terminal rows
 - Monospace font stack (JetBrains Mono, Fira Code, Cascadia Code, etc.)
 - Renders natively on GitHub, GitLab, and any browser
 - Tiny file sizes (typically 5-20 KB)
