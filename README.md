@@ -30,7 +30,7 @@ bun src/index.ts export demo.cast -o demo.svg
 ### Install globally (use `termsnap` from anywhere)
 
 ```bash
-bun build src/index.ts --outfile bin/termsnap.js --target node
+bun build src/index.ts --outfile bin/termsnap.js --target bun
 bun link
 ```
 

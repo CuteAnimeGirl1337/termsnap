@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "bun src/index.ts",
-    "build": "bun build src/index.ts --outfile bin/termsnap.js --target node",
+    "build": "bun build src/index.ts --outfile bin/termsnap.js --target bun",
     "dev": "bun --watch src/index.ts"
   },
   "keywords": ["terminal", "recording", "svg", "animation", "cli", "readme", "demo", "asciicast"],
