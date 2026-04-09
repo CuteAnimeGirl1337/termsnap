@@ -2,6 +2,10 @@
 
 > Record terminal sessions and export beautiful animated SVGs. One tool, two commands.
 
+<p align="center">
+  <img src="demo.svg" alt="termsnap demo" width="700">
+</p>
+
 The current tools for creating terminal recordings are either too complex (chain asciinema + svg-term-cli), require learning a config language (vhs tape files), or produce blurry GIFs. **termsnap** does it all in two commands with sharp, animated SVG output that renders natively on GitHub.
 
 ## Usage
