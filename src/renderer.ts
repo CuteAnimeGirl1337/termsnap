@@ -31,14 +31,14 @@ interface Frame {
 }
 
 function screenFingerprint(screen: ScreenState): string {
-  let hash = "";
+  const parts: string[] = [];
   for (let y = 0; y < screen.height; y++) {
     for (let x = 0; x < screen.width; x++) {
       const c = screen.cells[y][x];
-      hash += c.char + c.fg + c.bg + (c.bold ? "1" : "0") + (c.italic ? "1" : "0") + (c.underline ? "1" : "0");
+      parts.push(c.char, c.fg, c.bg);
     }
   }
-  return hash;
+  return parts.join("");
 }
 
 function buildFrames(cast: CastFile, maxIdleSeconds: number = 3, speed: number = 1): Frame[] {

@@ -52,9 +52,29 @@ program
       process.exit(1);
     }
 
-    const theme = getTheme(opts.theme);
-    const content = await file.text();
-    const cast = parseCast(content);
+    let theme;
+    try { theme = getTheme(opts.theme); }
+    catch (e: any) { console.error(chalk.red(`  ✗ ${e.message}`)); process.exit(1); }
+
+    let cast;
+    try {
+      const content = await file.text();
+      cast = parseCast(content);
+    } catch (e: any) {
+      console.error(chalk.red(`  ✗ Failed to parse ${input}: ${e.message}`));
+      process.exit(1);
+    }
+
+    if (cast.events.filter(e => e.type === "o").length === 0) {
+      console.error(chalk.red(`  ✗ No output events in ${input}. Nothing to export.`));
+      process.exit(1);
+    }
+
+    const speed = parseFloat(opts.speed);
+    if (speed <= 0) {
+      console.error(chalk.red(`  ✗ Speed must be greater than 0 (got ${opts.speed}).`));
+      process.exit(1);
+    }
 
     if (opts.cols) cast.header.width = parseInt(opts.cols);
     if (opts.rows) cast.header.height = parseInt(opts.rows);
@@ -65,7 +85,7 @@ program
       window: opts.window,
       fontSize: parseInt(opts.fontSize),
       theme,
-      speed: parseFloat(opts.speed),
+      speed,
       maxIdle: parseFloat(opts.maxIdle),
       title: opts.title,
       crop: opts.crop ?? false,
@@ -78,7 +98,7 @@ program
     await Bun.write(outputFile, svg);
 
     const size = (svg.length / 1024).toFixed(1);
-    console.log(chalk.green(`  Exported to ${outputFile}`) + chalk.dim(` (${size} KB, theme: ${theme.name})`));
+    console.log(chalk.green(`  ✓ Exported to ${outputFile}`) + chalk.dim(` (${size} KB, theme: ${theme.name})`));
   });
 
 program
@@ -93,7 +113,16 @@ program
   .option("--max-idle <seconds>", "Cap max pause between frames in seconds", "3")
   .option("--title <text>", "Window title bar text")
   .action(async (opts) => {
-    const theme = getTheme(opts.theme);
+    let theme;
+    try { theme = getTheme(opts.theme); }
+    catch (e: any) { console.error(chalk.red(`  ✗ ${e.message}`)); process.exit(1); }
+
+    const speed = parseFloat(opts.speed);
+    if (speed <= 0) {
+      console.error(chalk.red(`  ✗ Speed must be greater than 0 (got ${opts.speed}).`));
+      process.exit(1);
+    }
+
     const cast = await record({
       cols: parseInt(opts.cols),
       rows: parseInt(opts.rows),
@@ -102,7 +131,7 @@ program
     const svg = renderSVG(cast, {
       window: opts.window,
       theme,
-      speed: parseFloat(opts.speed),
+      speed,
       maxIdle: parseFloat(opts.maxIdle),
       title: opts.title,
     });
@@ -125,14 +154,25 @@ program
       process.exit(1);
     }
 
-    const content = await file.text();
-    const cast = parseCast(content);
+    let cast;
+    try {
+      const content = await file.text();
+      cast = parseCast(content);
+    } catch (e: any) {
+      console.error(chalk.red(`  ✗ Failed to parse ${input}: ${e.message}`));
+      process.exit(1);
+    }
+
     const speed = parseFloat(opts.speed);
+    if (speed <= 0) {
+      console.error(chalk.red(`  ✗ Speed must be greater than 0 (got ${opts.speed}).`));
+      process.exit(1);
+    }
     const maxIdle = parseFloat(opts.maxIdle);
 
     const outputEvents = cast.events.filter((e) => e.type === "o");
     if (outputEvents.length === 0) {
-      console.error(chalk.red("  No output events in this recording."));
+      console.error(chalk.red("  ✗ No output events in this recording."));
       process.exit(1);
     }
 
