@@ -10,6 +10,8 @@ The current tools for terminal recordings are either too complex (chaining ascii
 
 **termsnap** does it all in two commands with sharp, animated SVG output that renders natively on GitHub.
 
+**[Try the web playground](https://cuteanimegirl1337.github.io/termsnap/)** — paste a `.cast` file and preview SVGs with different themes instantly.
+
 ---
 
 ## Quick Start
