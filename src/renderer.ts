@@ -1,15 +1,17 @@
 import {
   createScreen,
   feedScreen,
+  setTheme,
+  getDefaults,
   type ScreenState,
   type Cell,
-  DEFAULT_BG,
-  DEFAULT_FG,
 } from "./parser.js";
 import type { CastFile } from "./cast.js";
+import type { Theme } from "./themes.js";
+import { themes } from "./themes.js";
 
-interface RenderOptions {
-  theme?: "dark" | "light";
+export interface RenderOptions {
+  theme?: Theme;
   window?: boolean;
   fontSize?: number;
   fontFamily?: string;
@@ -24,16 +26,12 @@ interface Frame {
   duration: number;
 }
 
-/**
- * Build keyframes from cast events — one frame per visual change.
- */
 function buildFrames(cast: CastFile, maxIdleSeconds: number = 3): Frame[] {
   const { width, height } = cast.header;
   let screen = createScreen(width, height);
   const frames: Frame[] = [];
   let lastFrameTime = 0;
 
-  // Merge events that are very close together (< 16ms)
   const mergedEvents: { time: number; data: string }[] = [];
   for (const event of cast.events) {
     if (event.type !== "o") continue;
@@ -49,7 +47,6 @@ function buildFrames(cast: CastFile, maxIdleSeconds: number = 3): Frame[] {
     const event = mergedEvents[i];
     screen = feedScreen(screen, event.data);
 
-    // Cap idle time
     let time = event.time;
     if (time - lastFrameTime > maxIdleSeconds) {
       time = lastFrameTime + maxIdleSeconds;
@@ -65,9 +62,12 @@ function buildFrames(cast: CastFile, maxIdleSeconds: number = 3): Frame[] {
   return frames;
 }
 
-/**
- * Render a cast file to animated SVG.
- */
+function applyTheme(opts: RenderOptions): { bg: string; fg: string; windowBar: string } {
+  const theme = opts.theme ?? themes["one-dark"];
+  setTheme(theme);
+  return { bg: theme.background, fg: theme.foreground, windowBar: theme.windowBar };
+}
+
 export function renderSVG(cast: CastFile, opts: RenderOptions = {}): string {
   const {
     window: showWindow = true,
@@ -78,6 +78,7 @@ export function renderSVG(cast: CastFile, opts: RenderOptions = {}): string {
     borderRadius = 8,
   } = opts;
 
+  const { bg, windowBar } = applyTheme(opts);
   const frames = buildFrames(cast);
   if (frames.length === 0) return "<svg></svg>";
 
@@ -88,22 +89,19 @@ export function renderSVG(cast: CastFile, opts: RenderOptions = {}): string {
   const termWidth = cols * charWidth + padding * 2;
   const termHeight = rows * rowHeight + padding * 2;
   const windowBarHeight = showWindow ? 36 : 0;
-  const svgWidth = termWidth + 20; // outer padding
+  const svgWidth = termWidth + 20;
   const svgHeight = termHeight + windowBarHeight + 20;
 
-  const totalDuration = frames.reduce((sum, f) => sum + f.duration, 0) + 2; // +2s pause at end
+  const totalDuration = frames.reduce((sum, f) => sum + f.duration, 0) + 2;
 
-  // Build SVG
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}">\n`;
 
-  // Styles
   svg += `<style>\n`;
   svg += `  .term-text { font-family: ${fontFamily}; font-size: ${fontSize}px; white-space: pre; }\n`;
   svg += `  .term-bold { font-weight: bold; }\n`;
   svg += `  .term-italic { font-style: italic; }\n`;
   svg += `  .frame { opacity: 0; }\n`;
 
-  // Generate keyframe animations for each frame
   let accumulated = 0;
   for (let i = 0; i < frames.length; i++) {
     const startPct = (accumulated / totalDuration) * 100;
@@ -119,30 +117,25 @@ export function renderSVG(cast: CastFile, opts: RenderOptions = {}): string {
   }
   svg += `</style>\n`;
 
-  // Background
-  svg += `<rect x="10" y="10" width="${termWidth}" height="${termHeight + windowBarHeight}" rx="${borderRadius}" ry="${borderRadius}" fill="${DEFAULT_BG}" />\n`;
+  svg += `<rect x="10" y="10" width="${termWidth}" height="${termHeight + windowBarHeight}" rx="${borderRadius}" ry="${borderRadius}" fill="${bg}" />\n`;
 
-  // Window bar
   if (showWindow) {
     svg += `<g transform="translate(10, 10)">\n`;
-    svg += `  <rect width="${termWidth}" height="${windowBarHeight}" rx="${borderRadius}" ry="${borderRadius}" fill="#282c34" />\n`;
-    // Fix bottom corners of title bar
-    svg += `  <rect y="${windowBarHeight - borderRadius}" width="${termWidth}" height="${borderRadius}" fill="#282c34" />\n`;
-    // Traffic light buttons
+    svg += `  <rect width="${termWidth}" height="${windowBarHeight}" rx="${borderRadius}" ry="${borderRadius}" fill="${windowBar}" />\n`;
+    svg += `  <rect y="${windowBarHeight - borderRadius}" width="${termWidth}" height="${borderRadius}" fill="${windowBar}" />\n`;
     svg += `  <circle cx="24" cy="${windowBarHeight / 2}" r="6" fill="#ff5f56" />\n`;
     svg += `  <circle cx="44" cy="${windowBarHeight / 2}" r="6" fill="#ffbd2e" />\n`;
     svg += `  <circle cx="64" cy="${windowBarHeight / 2}" r="6" fill="#27c93f" />\n`;
     svg += `</g>\n`;
   }
 
-  // Render each frame
   const contentY = 10 + windowBarHeight + padding;
   const contentX = 10 + padding;
 
   for (let fi = 0; fi < frames.length; fi++) {
     const { screen } = frames[fi];
     svg += `<g class="frame frame-${fi}" transform="translate(${contentX}, ${contentY})">\n`;
-    svg += renderScreen(screen, charWidth, rowHeight, fontSize);
+    svg += renderScreen(screen, bg, charWidth, rowHeight, fontSize);
     svg += `</g>\n`;
   }
 
@@ -150,8 +143,64 @@ export function renderSVG(cast: CastFile, opts: RenderOptions = {}): string {
   return svg;
 }
 
+export function renderStillSVG(cast: CastFile, opts: RenderOptions = {}): string {
+  const {
+    window: showWindow = true,
+    fontSize = 14,
+    fontFamily = "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', 'Consolas', monospace",
+    padding = 12,
+    lineHeight = 1.35,
+    borderRadius = 8,
+  } = opts;
+
+  const { bg, windowBar } = applyTheme(opts);
+  const frames = buildFrames(cast);
+  if (frames.length === 0) return "<svg></svg>";
+
+  const lastFrame = frames[frames.length - 1];
+  const charWidth = fontSize * 0.6;
+  const rowHeight = fontSize * lineHeight;
+  const { width: cols, height: rows } = cast.header;
+
+  const termWidth = cols * charWidth + padding * 2;
+  const termHeight = rows * rowHeight + padding * 2;
+  const windowBarHeight = showWindow ? 36 : 0;
+  const svgWidth = termWidth + 20;
+  const svgHeight = termHeight + windowBarHeight + 20;
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}">\n`;
+  svg += `<style>\n`;
+  svg += `  .term-text { font-family: ${fontFamily}; font-size: ${fontSize}px; white-space: pre; }\n`;
+  svg += `  .term-bold { font-weight: bold; }\n`;
+  svg += `  .term-italic { font-style: italic; }\n`;
+  svg += `</style>\n`;
+
+  svg += `<rect x="10" y="10" width="${termWidth}" height="${termHeight + windowBarHeight}" rx="${borderRadius}" ry="${borderRadius}" fill="${bg}" />\n`;
+
+  if (showWindow) {
+    svg += `<g transform="translate(10, 10)">\n`;
+    svg += `  <rect width="${termWidth}" height="${windowBarHeight}" rx="${borderRadius}" ry="${borderRadius}" fill="${windowBar}" />\n`;
+    svg += `  <rect y="${windowBarHeight - borderRadius}" width="${termWidth}" height="${borderRadius}" fill="${windowBar}" />\n`;
+    svg += `  <circle cx="24" cy="${windowBarHeight / 2}" r="6" fill="#ff5f56" />\n`;
+    svg += `  <circle cx="44" cy="${windowBarHeight / 2}" r="6" fill="#ffbd2e" />\n`;
+    svg += `  <circle cx="64" cy="${windowBarHeight / 2}" r="6" fill="#27c93f" />\n`;
+    svg += `</g>\n`;
+  }
+
+  const contentY = 10 + windowBarHeight + padding;
+  const contentX = 10 + padding;
+
+  svg += `<g transform="translate(${contentX}, ${contentY})">\n`;
+  svg += renderScreen(lastFrame.screen, bg, charWidth, rowHeight, fontSize);
+  svg += `</g>\n`;
+
+  svg += `</svg>\n`;
+  return svg;
+}
+
 function renderScreen(
   screen: ScreenState,
+  bgColor: string,
   charWidth: number,
   rowHeight: number,
   fontSize: number
@@ -159,19 +208,16 @@ function renderScreen(
   let result = "";
 
   for (let y = 0; y < screen.height; y++) {
-    // Group consecutive cells with same style into spans
     const row = screen.cells[y];
     let x = 0;
 
     while (x < screen.width) {
-      // Skip empty trailing cells
       const cell = row[x];
-      if (cell.char === " " && cell.bg === DEFAULT_BG && !cell.underline) {
+      if (cell.char === " " && cell.bg === bgColor && !cell.underline) {
         x++;
         continue;
       }
 
-      // Collect run of same-styled cells
       let run = "";
       const style = cellStyle(cell);
       let runX = x;
@@ -183,14 +229,12 @@ function renderScreen(
         runX++;
       }
 
-      // Trim trailing spaces in the run
       const trimmed = run.replace(/\s+$/, "");
       if (trimmed.length > 0) {
         const yPos = y * rowHeight + fontSize;
         const xPos = x * charWidth;
 
-        // Background rect if not default
-        if (cell.bg !== DEFAULT_BG) {
+        if (cell.bg !== bgColor) {
           result += `  <rect x="${xPos}" y="${y * rowHeight}" width="${run.length * charWidth}" height="${rowHeight}" fill="${cell.bg}" />\n`;
         }
 
@@ -222,62 +266,4 @@ function escapeXML(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
-}
-
-/**
- * Render a single static frame (the last one) as a still SVG.
- */
-export function renderStillSVG(cast: CastFile, opts: RenderOptions = {}): string {
-  const frames = buildFrames(cast);
-  if (frames.length === 0) return "<svg></svg>";
-
-  // Use the last frame
-  const lastFrame = frames[frames.length - 1];
-  const {
-    window: showWindow = true,
-    fontSize = 14,
-    fontFamily = "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Menlo', 'Consolas', monospace",
-    padding = 12,
-    lineHeight = 1.35,
-    borderRadius = 8,
-  } = opts;
-
-  const charWidth = fontSize * 0.6;
-  const rowHeight = fontSize * lineHeight;
-  const { width: cols, height: rows } = cast.header;
-
-  const termWidth = cols * charWidth + padding * 2;
-  const termHeight = rows * rowHeight + padding * 2;
-  const windowBarHeight = showWindow ? 36 : 0;
-  const svgWidth = termWidth + 20;
-  const svgHeight = termHeight + windowBarHeight + 20;
-
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}">\n`;
-  svg += `<style>\n`;
-  svg += `  .term-text { font-family: ${fontFamily}; font-size: ${fontSize}px; white-space: pre; }\n`;
-  svg += `  .term-bold { font-weight: bold; }\n`;
-  svg += `  .term-italic { font-style: italic; }\n`;
-  svg += `</style>\n`;
-
-  svg += `<rect x="10" y="10" width="${termWidth}" height="${termHeight + windowBarHeight}" rx="${borderRadius}" ry="${borderRadius}" fill="${DEFAULT_BG}" />\n`;
-
-  if (showWindow) {
-    svg += `<g transform="translate(10, 10)">\n`;
-    svg += `  <rect width="${termWidth}" height="${windowBarHeight}" rx="${borderRadius}" ry="${borderRadius}" fill="#282c34" />\n`;
-    svg += `  <rect y="${windowBarHeight - borderRadius}" width="${termWidth}" height="${borderRadius}" fill="#282c34" />\n`;
-    svg += `  <circle cx="24" cy="${windowBarHeight / 2}" r="6" fill="#ff5f56" />\n`;
-    svg += `  <circle cx="44" cy="${windowBarHeight / 2}" r="6" fill="#ffbd2e" />\n`;
-    svg += `  <circle cx="64" cy="${windowBarHeight / 2}" r="6" fill="#27c93f" />\n`;
-    svg += `</g>\n`;
-  }
-
-  const contentY = 10 + windowBarHeight + padding;
-  const contentX = 10 + padding;
-
-  svg += `<g transform="translate(${contentX}, ${contentY})">\n`;
-  svg += renderScreen(lastFrame.screen, charWidth, rowHeight, fontSize);
-  svg += `</g>\n`;
-
-  svg += `</svg>\n`;
-  return svg;
 }

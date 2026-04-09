@@ -10,7 +10,8 @@
   "scripts": {
     "start": "bun src/index.ts",
     "build": "bun build src/index.ts --outfile bin/termsnap.js --target bun",
-    "dev": "bun --watch src/index.ts"
+    "dev": "bun --watch src/index.ts",
+    "playground": "bun --hot playground/serve.ts"
   },
   "keywords": ["terminal", "recording", "svg", "animation", "cli", "readme", "demo", "asciicast"],
   "license": "MIT",

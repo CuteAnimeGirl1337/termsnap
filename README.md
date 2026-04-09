@@ -2,6 +2,10 @@
 
 > Record terminal sessions and export beautiful animated SVGs. One tool, two commands.
 
+<p align="center">
+  <img src="demo.svg" alt="termsnap demo" width="700">
+</p>
+
 The current tools for terminal recordings are either too complex (chaining asciinema + svg-term-cli), require learning a config language (vhs tape files), or produce blurry GIFs.
 
 **termsnap** does it all in two commands with sharp, animated SVG output that renders natively on GitHub.
@@ -61,11 +65,12 @@ Type `exit` or press `Ctrl+D` to stop recording.
 Converts a `.cast` file into an animated SVG.
 
 ```bash
-termsnap export demo.cast                   # Output: demo.svg
-termsnap export demo.cast -o output.svg     # Custom output path
-termsnap export demo.cast --no-window       # No window chrome
-termsnap export demo.cast --still           # Static screenshot (last frame)
-termsnap export demo.cast --font-size 16    # Larger text
+termsnap export demo.cast                          # Output: demo.svg
+termsnap export demo.cast -o output.svg            # Custom output path
+termsnap export demo.cast --theme dracula          # Use a theme
+termsnap export demo.cast --no-window              # No window chrome
+termsnap export demo.cast --still                  # Static screenshot (last frame)
+termsnap export demo.cast --font-size 16           # Larger text
 ```
 
 ### `termsnap snap`
@@ -74,6 +79,34 @@ Record + export in one step.
 
 ```bash
 termsnap snap -o demo.svg
+termsnap snap -o demo.svg --theme catppuccin
+```
+
+### `termsnap themes`
+
+List all available color themes.
+
+---
+
+## Themes
+
+8 built-in themes. Use `--theme <name>` with `export` or `snap`.
+
+| Theme | Preview |
+|-------|---------|
+| `one-dark` | Default. Atom's One Dark |
+| `dracula` | Popular dark purple theme |
+| `catppuccin` | Catppuccin Mocha — pastel dark |
+| `nord` | Arctic, north-bluish palette |
+| `gruvbox` | Retro groovy dark theme |
+| `light` | Clean light theme |
+| `github-dark` | GitHub's dark mode colors |
+| `tokyo-night` | Dark theme inspired by Tokyo lights |
+
+```bash
+termsnap export demo.cast --theme dracula
+termsnap export demo.cast --theme catppuccin
+termsnap export demo.cast --theme nord
 ```
 
 ---
@@ -82,7 +115,8 @@ termsnap snap -o demo.svg
 
 - Animated SVG with CSS keyframes (no JavaScript)
 - macOS-style window chrome with traffic light buttons
-- One Dark color theme with full 256-color + RGB support
+- 8 color themes (One Dark, Dracula, Catppuccin, Nord, Gruvbox, Light, GitHub Dark, Tokyo Night)
+- Full 256-color + RGB support
 - Monospace font stack (JetBrains Mono, Fira Code, Cascadia Code, etc.)
 - Renders natively on GitHub, GitLab, and any browser
 - Tiny file sizes (typically 5-20 KB)

@@ -1,7 +1,11 @@
 /**
  * Minimal ANSI terminal emulator.
  * Parses escape sequences and maintains a screen buffer.
+ * Supports configurable color themes.
  */
+
+import type { Theme } from "./themes.js";
+import { themes } from "./themes.js";
 
 export interface Cell {
   char: string;
@@ -21,14 +25,20 @@ export interface ScreenState {
   cursorY: number;
 }
 
-// Standard 16 ANSI colors
-const ANSI_COLORS = [
-  "#282c34", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#abb2bf", // normal
-  "#5c6370", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#ffffff", // bright
-];
+// Active theme colors — set via setTheme()
+let ANSI_COLORS = themes["one-dark"].colors;
+let DEFAULT_FG = themes["one-dark"].foreground;
+let DEFAULT_BG = themes["one-dark"].background;
 
-const DEFAULT_FG = "#c8d0d8";
-const DEFAULT_BG = "#1e2127";
+export function setTheme(theme: Theme): void {
+  ANSI_COLORS = theme.colors;
+  DEFAULT_FG = theme.foreground;
+  DEFAULT_BG = theme.background;
+}
+
+export function getDefaults() {
+  return { fg: DEFAULT_FG, bg: DEFAULT_BG };
+}
 
 export function emptyCell(): Cell {
   return { char: " ", fg: DEFAULT_FG, bg: DEFAULT_BG, bold: false, dim: false, italic: false, underline: false };
@@ -61,9 +71,6 @@ export function feedScreen(screen: ScreenState, data: string): ScreenState {
   let dim = false;
   let italic = false;
   let underline = false;
-
-  // Restore current style from cursor position cell
-  // (simplified — in a real emulator we'd track this separately)
 
   while (i < data.length) {
     const ch = data[i];
@@ -186,54 +193,33 @@ function handleCSI(s: ScreenState, params: string, cmd: string): void {
   const nums = params.split(";").map((n) => parseInt(n) || 0);
 
   switch (cmd) {
-    case "A": // Cursor up
-      s.cursorY = Math.max(0, s.cursorY - (nums[0] || 1));
-      break;
-    case "B": // Cursor down
-      s.cursorY = Math.min(s.height - 1, s.cursorY + (nums[0] || 1));
-      break;
-    case "C": // Cursor forward
-      s.cursorX = Math.min(s.width - 1, s.cursorX + (nums[0] || 1));
-      break;
-    case "D": // Cursor back
-      s.cursorX = Math.max(0, s.cursorX - (nums[0] || 1));
-      break;
-    case "H": // Cursor position
-    case "f":
+    case "A": s.cursorY = Math.max(0, s.cursorY - (nums[0] || 1)); break;
+    case "B": s.cursorY = Math.min(s.height - 1, s.cursorY + (nums[0] || 1)); break;
+    case "C": s.cursorX = Math.min(s.width - 1, s.cursorX + (nums[0] || 1)); break;
+    case "D": s.cursorX = Math.max(0, s.cursorX - (nums[0] || 1)); break;
+    case "H": case "f":
       s.cursorY = Math.min(s.height - 1, Math.max(0, (nums[0] || 1) - 1));
       s.cursorX = Math.min(s.width - 1, Math.max(0, (nums[1] || 1) - 1));
       break;
-    case "J": // Erase display
-      eraseDisplay(s, nums[0] || 0);
-      break;
-    case "K": // Erase line
-      eraseLine(s, nums[0] || 0);
-      break;
-    case "G": // Cursor horizontal absolute
-      s.cursorX = Math.min(s.width - 1, Math.max(0, (nums[0] || 1) - 1));
-      break;
-    case "d": // Cursor vertical absolute
-      s.cursorY = Math.min(s.height - 1, Math.max(0, (nums[0] || 1) - 1));
-      break;
-    // m (SGR) is handled by the caller
+    case "J": eraseDisplay(s, nums[0] || 0); break;
+    case "K": eraseLine(s, nums[0] || 0); break;
+    case "G": s.cursorX = Math.min(s.width - 1, Math.max(0, (nums[0] || 1) - 1)); break;
+    case "d": s.cursorY = Math.min(s.height - 1, Math.max(0, (nums[0] || 1) - 1)); break;
   }
 }
 
 function eraseDisplay(s: ScreenState, mode: number): void {
   if (mode === 0) {
-    // Clear from cursor to end
     for (let x = s.cursorX; x < s.width; x++) s.cells[s.cursorY][x] = emptyCell();
     for (let y = s.cursorY + 1; y < s.height; y++) {
       for (let x = 0; x < s.width; x++) s.cells[y][x] = emptyCell();
     }
   } else if (mode === 1) {
-    // Clear from start to cursor
     for (let y = 0; y < s.cursorY; y++) {
       for (let x = 0; x < s.width; x++) s.cells[y][x] = emptyCell();
     }
     for (let x = 0; x <= s.cursorX; x++) s.cells[s.cursorY][x] = emptyCell();
   } else if (mode === 2 || mode === 3) {
-    // Clear entire screen
     for (let y = 0; y < s.height; y++) {
       for (let x = 0; x < s.width; x++) s.cells[y][x] = emptyCell();
     }
@@ -280,58 +266,27 @@ function parseSGR(
     const code = nums[i];
 
     if (code === 0) {
-      fg = DEFAULT_FG;
-      bg = DEFAULT_BG;
-      bold = false;
-      dim = false;
-      italic = false;
-      underline = false;
-    } else if (code === 1) {
-      bold = true;
-    } else if (code === 2) {
-      dim = true;
-    } else if (code === 3) {
-      italic = true;
-    } else if (code === 4) {
-      underline = true;
-    } else if (code === 22) {
-      bold = false;
-      dim = false;
-    } else if (code === 23) {
-      italic = false;
-    } else if (code === 24) {
-      underline = false;
-    } else if (code >= 30 && code <= 37) {
-      fg = ANSI_COLORS[code - 30 + (bold ? 8 : 0)];
-    } else if (code === 38) {
-      // Extended fg color
-      if (nums[i + 1] === 5 && nums[i + 2] !== undefined) {
-        fg = color256ToHex(nums[i + 2]);
-        i += 2;
-      } else if (nums[i + 1] === 2 && nums[i + 4] !== undefined) {
-        fg = rgbToHex(nums[i + 2], nums[i + 3], nums[i + 4]);
-        i += 4;
-      }
-    } else if (code === 39) {
-      fg = DEFAULT_FG;
-    } else if (code >= 40 && code <= 47) {
-      bg = ANSI_COLORS[code - 40];
-    } else if (code === 48) {
-      // Extended bg color
-      if (nums[i + 1] === 5 && nums[i + 2] !== undefined) {
-        bg = color256ToHex(nums[i + 2]);
-        i += 2;
-      } else if (nums[i + 1] === 2 && nums[i + 4] !== undefined) {
-        bg = rgbToHex(nums[i + 2], nums[i + 3], nums[i + 4]);
-        i += 4;
-      }
-    } else if (code === 49) {
-      bg = DEFAULT_BG;
-    } else if (code >= 90 && code <= 97) {
-      fg = ANSI_COLORS[code - 90 + 8];
-    } else if (code >= 100 && code <= 107) {
-      bg = ANSI_COLORS[code - 100 + 8];
-    }
+      fg = DEFAULT_FG; bg = DEFAULT_BG;
+      bold = false; dim = false; italic = false; underline = false;
+    } else if (code === 1) bold = true;
+    else if (code === 2) dim = true;
+    else if (code === 3) italic = true;
+    else if (code === 4) underline = true;
+    else if (code === 22) { bold = false; dim = false; }
+    else if (code === 23) italic = false;
+    else if (code === 24) underline = false;
+    else if (code >= 30 && code <= 37) fg = ANSI_COLORS[code - 30 + (bold ? 8 : 0)];
+    else if (code === 38) {
+      if (nums[i + 1] === 5 && nums[i + 2] !== undefined) { fg = color256ToHex(nums[i + 2]); i += 2; }
+      else if (nums[i + 1] === 2 && nums[i + 4] !== undefined) { fg = rgbToHex(nums[i + 2], nums[i + 3], nums[i + 4]); i += 4; }
+    } else if (code === 39) fg = DEFAULT_FG;
+    else if (code >= 40 && code <= 47) bg = ANSI_COLORS[code - 40];
+    else if (code === 48) {
+      if (nums[i + 1] === 5 && nums[i + 2] !== undefined) { bg = color256ToHex(nums[i + 2]); i += 2; }
+      else if (nums[i + 1] === 2 && nums[i + 4] !== undefined) { bg = rgbToHex(nums[i + 2], nums[i + 3], nums[i + 4]); i += 4; }
+    } else if (code === 49) bg = DEFAULT_BG;
+    else if (code >= 90 && code <= 97) fg = ANSI_COLORS[code - 90 + 8];
+    else if (code >= 100 && code <= 107) bg = ANSI_COLORS[code - 100 + 8];
 
     i++;
   }
@@ -345,7 +300,6 @@ function color256ToHex(n: number): string {
     const g = 8 + (n - 232) * 10;
     return rgbToHex(g, g, g);
   }
-  // 6x6x6 color cube
   const idx = n - 16;
   const r = Math.floor(idx / 36);
   const g = Math.floor((idx % 36) / 6);
@@ -356,5 +310,3 @@ function color256ToHex(n: number): string {
 function rgbToHex(r: number, g: number, b: number): string {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
-
-export { DEFAULT_FG, DEFAULT_BG };

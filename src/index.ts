@@ -4,6 +4,7 @@ import chalk from "chalk";
 import { record } from "./recorder.js";
 import { parseCast, writeCast } from "./cast.js";
 import { renderSVG, renderStillSVG } from "./renderer.js";
+import { getTheme, listThemes, themes } from "./themes.js";
 
 program
   .name("termsnap")
@@ -34,6 +35,7 @@ program
   .description("Export a recording to SVG")
   .argument("<input>", "Input .cast file")
   .option("-o, --output <file>", "Output SVG file")
+  .option("-t, --theme <name>", "Color theme", "one-dark")
   .option("--no-window", "Hide window chrome (traffic light buttons)")
   .option("--still", "Export last frame only (no animation)")
   .option("--font-size <px>", "Font size in pixels", "14")
@@ -46,44 +48,57 @@ program
       process.exit(1);
     }
 
+    const theme = getTheme(opts.theme);
     const content = await file.text();
     const cast = parseCast(content);
 
-    // Override dimensions if specified
     if (opts.cols) cast.header.width = parseInt(opts.cols);
     if (opts.rows) cast.header.height = parseInt(opts.rows);
 
     const outputFile = opts.output ?? input.replace(/\.cast$/, ".svg");
 
     const svg = opts.still
-      ? renderStillSVG(cast, { window: opts.window, fontSize: parseInt(opts.fontSize) })
-      : renderSVG(cast, { window: opts.window, fontSize: parseInt(opts.fontSize) });
+      ? renderStillSVG(cast, { window: opts.window, fontSize: parseInt(opts.fontSize), theme })
+      : renderSVG(cast, { window: opts.window, fontSize: parseInt(opts.fontSize), theme });
 
     await Bun.write(outputFile, svg);
 
     const size = (svg.length / 1024).toFixed(1);
-    console.log(chalk.green(`  ✓ Exported to ${outputFile}`) + chalk.dim(` (${size} KB)`));
+    console.log(chalk.green(`  ✓ Exported to ${outputFile}`) + chalk.dim(` (${size} KB, theme: ${theme.name})`));
   });
 
-// Shortcut: record + export in one command
 program
   .command("snap")
   .description("Record and export to SVG in one step")
   .option("-o, --output <file>", "Output SVG file", "termsnap.svg")
   .option("-c, --cols <number>", "Terminal width", "80")
   .option("-r, --rows <number>", "Terminal height", "24")
+  .option("-t, --theme <name>", "Color theme", "one-dark")
   .option("--no-window", "Hide window chrome")
   .action(async (opts) => {
+    const theme = getTheme(opts.theme);
     const cast = await record({
       cols: parseInt(opts.cols),
       rows: parseInt(opts.rows),
     });
 
-    const svg = renderSVG(cast, { window: opts.window });
+    const svg = renderSVG(cast, { window: opts.window, theme });
     await Bun.write(opts.output, svg);
 
     const size = (svg.length / 1024).toFixed(1);
-    console.log(chalk.green(`\n  ✓ Exported to ${opts.output}`) + chalk.dim(` (${size} KB)`));
+    console.log(chalk.green(`\n  ✓ Exported to ${opts.output}`) + chalk.dim(` (${size} KB, theme: ${theme.name})`));
+  });
+
+program
+  .command("themes")
+  .description("List available color themes")
+  .action(() => {
+    console.log(chalk.bold("\n  Available themes:\n"));
+    for (const [id, theme] of Object.entries(themes)) {
+      const swatch = theme.colors.slice(1, 7).map((c) => chalk.hex(c)("██")).join("");
+      console.log(`  ${chalk.bold(id.padEnd(16))} ${theme.name.padEnd(20)} ${swatch}  ${chalk.dim(theme.background)}`);
+    }
+    console.log(chalk.dim(`\n  Usage: termsnap export demo.cast --theme dracula\n`));
   });
 
 program.parse();
