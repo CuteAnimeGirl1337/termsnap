@@ -27,7 +27,7 @@ program
 
     const content = writeCast(cast);
     await Bun.write(opts.output, content);
-    console.log(chalk.green(`\n  ✓ Saved to ${opts.output}`) + chalk.dim(` (${cast.events.length} events)`));
+    console.log(chalk.green(`\n  Saved to ${opts.output}`) + chalk.dim(` (${cast.events.length} events)`));
   });
 
 program
@@ -41,10 +41,14 @@ program
   .option("--font-size <px>", "Font size in pixels", "14")
   .option("--cols <number>", "Override terminal width")
   .option("--rows <number>", "Override terminal height")
+  .option("--speed <multiplier>", "Playback speed multiplier (2 = 2x faster)", "1")
+  .option("--max-idle <seconds>", "Cap max pause between frames in seconds", "3")
+  .option("--title <text>", "Window title bar text")
+  .option("--crop", "Trim empty rows from bottom of terminal")
   .action(async (input, opts) => {
     const file = Bun.file(input);
     if (!(await file.exists())) {
-      console.error(chalk.red(`  ✗ File not found: ${input}`));
+      console.error(chalk.red(`  File not found: ${input}`));
       process.exit(1);
     }
 
@@ -57,14 +61,24 @@ program
 
     const outputFile = opts.output ?? input.replace(/\.cast$/, ".svg");
 
+    const renderOpts = {
+      window: opts.window,
+      fontSize: parseInt(opts.fontSize),
+      theme,
+      speed: parseFloat(opts.speed),
+      maxIdle: parseFloat(opts.maxIdle),
+      title: opts.title,
+      crop: opts.crop ?? false,
+    };
+
     const svg = opts.still
-      ? renderStillSVG(cast, { window: opts.window, fontSize: parseInt(opts.fontSize), theme })
-      : renderSVG(cast, { window: opts.window, fontSize: parseInt(opts.fontSize), theme });
+      ? renderStillSVG(cast, renderOpts)
+      : renderSVG(cast, renderOpts);
 
     await Bun.write(outputFile, svg);
 
     const size = (svg.length / 1024).toFixed(1);
-    console.log(chalk.green(`  ✓ Exported to ${outputFile}`) + chalk.dim(` (${size} KB, theme: ${theme.name})`));
+    console.log(chalk.green(`  Exported to ${outputFile}`) + chalk.dim(` (${size} KB, theme: ${theme.name})`));
   });
 
 program
@@ -75,6 +89,9 @@ program
   .option("-r, --rows <number>", "Terminal height", "24")
   .option("-t, --theme <name>", "Color theme", "one-dark")
   .option("--no-window", "Hide window chrome")
+  .option("--speed <multiplier>", "Playback speed multiplier", "1")
+  .option("--max-idle <seconds>", "Cap max pause between frames in seconds", "3")
+  .option("--title <text>", "Window title bar text")
   .action(async (opts) => {
     const theme = getTheme(opts.theme);
     const cast = await record({
@@ -82,11 +99,65 @@ program
       rows: parseInt(opts.rows),
     });
 
-    const svg = renderSVG(cast, { window: opts.window, theme });
+    const svg = renderSVG(cast, {
+      window: opts.window,
+      theme,
+      speed: parseFloat(opts.speed),
+      maxIdle: parseFloat(opts.maxIdle),
+      title: opts.title,
+    });
     await Bun.write(opts.output, svg);
 
     const size = (svg.length / 1024).toFixed(1);
-    console.log(chalk.green(`\n  ✓ Exported to ${opts.output}`) + chalk.dim(` (${size} KB, theme: ${theme.name})`));
+    console.log(chalk.green(`\n  Exported to ${opts.output}`) + chalk.dim(` (${size} KB, theme: ${theme.name})`));
+  });
+
+program
+  .command("preview")
+  .description("Play back a .cast file in the terminal (like asciinema play)")
+  .argument("<input>", "Input .cast file")
+  .option("--speed <multiplier>", "Playback speed multiplier", "1")
+  .option("--max-idle <seconds>", "Cap max pause between frames in seconds", "3")
+  .action(async (input, opts) => {
+    const file = Bun.file(input);
+    if (!(await file.exists())) {
+      console.error(chalk.red(`  File not found: ${input}`));
+      process.exit(1);
+    }
+
+    const content = await file.text();
+    const cast = parseCast(content);
+    const speed = parseFloat(opts.speed);
+    const maxIdle = parseFloat(opts.maxIdle);
+
+    const outputEvents = cast.events.filter((e) => e.type === "o");
+    if (outputEvents.length === 0) {
+      console.error(chalk.red("  No output events in this recording."));
+      process.exit(1);
+    }
+
+    const duration = outputEvents[outputEvents.length - 1].time;
+    console.log(
+      chalk.dim(`  Playing ${input}`) +
+      chalk.dim(` (${outputEvents.length} events, ${duration.toFixed(1)}s, ${speed}x speed)`)
+    );
+    console.log(chalk.dim("  Press Ctrl+C to stop\n"));
+
+    let lastTime = 0;
+    for (const event of outputEvents) {
+      let delay = event.time - lastTime;
+      if (delay > maxIdle) delay = maxIdle;
+      if (speed > 0 && speed !== 1) delay = delay / speed;
+
+      if (delay > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delay * 1000));
+      }
+
+      process.stdout.write(event.data);
+      lastTime = event.time;
+    }
+
+    console.log(chalk.dim("\n\n  Playback finished."));
   });
 
 program

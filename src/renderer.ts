@@ -18,6 +18,10 @@ export interface RenderOptions {
   padding?: number;
   lineHeight?: number;
   borderRadius?: number;
+  speed?: number;
+  maxIdle?: number;
+  title?: string;
+  crop?: boolean;
 }
 
 interface Frame {
@@ -26,10 +30,21 @@ interface Frame {
   duration: number;
 }
 
-function buildFrames(cast: CastFile, maxIdleSeconds: number = 3): Frame[] {
+function screenFingerprint(screen: ScreenState): string {
+  let hash = "";
+  for (let y = 0; y < screen.height; y++) {
+    for (let x = 0; x < screen.width; x++) {
+      const c = screen.cells[y][x];
+      hash += c.char + c.fg + c.bg + (c.bold ? "1" : "0") + (c.italic ? "1" : "0") + (c.underline ? "1" : "0");
+    }
+  }
+  return hash;
+}
+
+function buildFrames(cast: CastFile, maxIdleSeconds: number = 3, speed: number = 1): Frame[] {
   const { width, height } = cast.header;
   let screen = createScreen(width, height);
-  const frames: Frame[] = [];
+  const rawFrames: Frame[] = [];
   let lastFrameTime = 0;
 
   const mergedEvents: { time: number; data: string }[] = [];
@@ -53,13 +68,43 @@ function buildFrames(cast: CastFile, maxIdleSeconds: number = 3): Frame[] {
     }
 
     const nextTime = mergedEvents[i + 1]?.time ?? time + 2;
-    const duration = Math.min(nextTime - time, maxIdleSeconds);
+    let duration = Math.min(nextTime - time, maxIdleSeconds);
 
-    frames.push({ screen, time, duration });
+    // Apply speed multiplier
+    if (speed > 0 && speed !== 1) {
+      duration = duration / speed;
+    }
+
+    rawFrames.push({ screen, time, duration });
     lastFrameTime = time;
   }
 
+  // Deduplicate consecutive identical frames
+  const frames: Frame[] = [];
+  let prevFingerprint = "";
+  for (const frame of rawFrames) {
+    const fp = screenFingerprint(frame.screen);
+    if (fp === prevFingerprint && frames.length > 0) {
+      frames[frames.length - 1].duration += frame.duration;
+    } else {
+      frames.push({ ...frame });
+      prevFingerprint = fp;
+    }
+  }
+
   return frames;
+}
+
+function findLastContentRow(screen: ScreenState, bgColor: string): number {
+  for (let y = screen.height - 1; y >= 0; y--) {
+    for (let x = 0; x < screen.width; x++) {
+      const cell = screen.cells[y][x];
+      if (cell.char !== " " || cell.bg !== bgColor) {
+        return y;
+      }
+    }
+  }
+  return 0;
 }
 
 function applyTheme(opts: RenderOptions): { bg: string; fg: string; windowBar: string } {
@@ -76,18 +121,29 @@ export function renderSVG(cast: CastFile, opts: RenderOptions = {}): string {
     padding = 12,
     lineHeight = 1.35,
     borderRadius = 8,
+    speed = 1,
+    maxIdle = 3,
+    title,
+    crop = false,
   } = opts;
 
   const { bg, windowBar } = applyTheme(opts);
-  const frames = buildFrames(cast);
+  const frames = buildFrames(cast, maxIdle, speed);
   if (frames.length === 0) return "<svg></svg>";
 
   const charWidth = fontSize * 0.6;
   const rowHeight = fontSize * lineHeight;
   const { width: cols, height: rows } = cast.header;
 
+  let displayRows = rows;
+  if (crop && frames.length > 0) {
+    const lastScreen = frames[frames.length - 1].screen;
+    const lastRow = findLastContentRow(lastScreen, bg);
+    displayRows = Math.max(1, lastRow + 1);
+  }
+
   const termWidth = cols * charWidth + padding * 2;
-  const termHeight = rows * rowHeight + padding * 2;
+  const termHeight = displayRows * rowHeight + padding * 2;
   const windowBarHeight = showWindow ? 36 : 0;
   const svgWidth = termWidth + 20;
   const svgHeight = termHeight + windowBarHeight + 20;
@@ -126,6 +182,10 @@ export function renderSVG(cast: CastFile, opts: RenderOptions = {}): string {
     svg += `  <circle cx="24" cy="${windowBarHeight / 2}" r="6" fill="#ff5f56" />\n`;
     svg += `  <circle cx="44" cy="${windowBarHeight / 2}" r="6" fill="#ffbd2e" />\n`;
     svg += `  <circle cx="64" cy="${windowBarHeight / 2}" r="6" fill="#27c93f" />\n`;
+    if (title) {
+      const titleX = termWidth / 2;
+      svg += `  <text x="${titleX}" y="${windowBarHeight / 2 + 5}" text-anchor="middle" font-family="${fontFamily}" font-size="${fontSize - 1}px" fill="${opts.theme?.foreground ?? '#c9d1d9'}">${escapeXML(title)}</text>\n`;
+    }
     svg += `</g>\n`;
   }
 
@@ -135,7 +195,7 @@ export function renderSVG(cast: CastFile, opts: RenderOptions = {}): string {
   for (let fi = 0; fi < frames.length; fi++) {
     const { screen } = frames[fi];
     svg += `<g class="frame frame-${fi}" transform="translate(${contentX}, ${contentY})">\n`;
-    svg += renderScreen(screen, bg, charWidth, rowHeight, fontSize);
+    svg += renderScreen(screen, bg, charWidth, rowHeight, fontSize, crop ? displayRows : undefined);
     svg += `</g>\n`;
   }
 
@@ -151,10 +211,14 @@ export function renderStillSVG(cast: CastFile, opts: RenderOptions = {}): string
     padding = 12,
     lineHeight = 1.35,
     borderRadius = 8,
+    speed = 1,
+    maxIdle = 3,
+    title,
+    crop = false,
   } = opts;
 
   const { bg, windowBar } = applyTheme(opts);
-  const frames = buildFrames(cast);
+  const frames = buildFrames(cast, maxIdle, speed);
   if (frames.length === 0) return "<svg></svg>";
 
   const lastFrame = frames[frames.length - 1];
@@ -162,8 +226,14 @@ export function renderStillSVG(cast: CastFile, opts: RenderOptions = {}): string
   const rowHeight = fontSize * lineHeight;
   const { width: cols, height: rows } = cast.header;
 
+  let displayRows = rows;
+  if (crop) {
+    const lastRow = findLastContentRow(lastFrame.screen, bg);
+    displayRows = Math.max(1, lastRow + 1);
+  }
+
   const termWidth = cols * charWidth + padding * 2;
-  const termHeight = rows * rowHeight + padding * 2;
+  const termHeight = displayRows * rowHeight + padding * 2;
   const windowBarHeight = showWindow ? 36 : 0;
   const svgWidth = termWidth + 20;
   const svgHeight = termHeight + windowBarHeight + 20;
@@ -184,6 +254,10 @@ export function renderStillSVG(cast: CastFile, opts: RenderOptions = {}): string
     svg += `  <circle cx="24" cy="${windowBarHeight / 2}" r="6" fill="#ff5f56" />\n`;
     svg += `  <circle cx="44" cy="${windowBarHeight / 2}" r="6" fill="#ffbd2e" />\n`;
     svg += `  <circle cx="64" cy="${windowBarHeight / 2}" r="6" fill="#27c93f" />\n`;
+    if (title) {
+      const titleX = termWidth / 2;
+      svg += `  <text x="${titleX}" y="${windowBarHeight / 2 + 5}" text-anchor="middle" font-family="${fontFamily}" font-size="${fontSize - 1}px" fill="${opts.theme?.foreground ?? '#c9d1d9'}">${escapeXML(title)}</text>\n`;
+    }
     svg += `</g>\n`;
   }
 
@@ -191,7 +265,7 @@ export function renderStillSVG(cast: CastFile, opts: RenderOptions = {}): string
   const contentX = 10 + padding;
 
   svg += `<g transform="translate(${contentX}, ${contentY})">\n`;
-  svg += renderScreen(lastFrame.screen, bg, charWidth, rowHeight, fontSize);
+  svg += renderScreen(lastFrame.screen, bg, charWidth, rowHeight, fontSize, crop ? displayRows : undefined);
   svg += `</g>\n`;
 
   svg += `</svg>\n`;
@@ -203,11 +277,13 @@ function renderScreen(
   bgColor: string,
   charWidth: number,
   rowHeight: number,
-  fontSize: number
+  fontSize: number,
+  maxRows?: number
 ): string {
   let result = "";
+  const rowLimit = maxRows ?? screen.height;
 
-  for (let y = 0; y < screen.height; y++) {
+  for (let y = 0; y < rowLimit; y++) {
     const row = screen.cells[y];
     let x = 0;
 

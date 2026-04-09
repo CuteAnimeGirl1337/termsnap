@@ -278,12 +278,34 @@ const themeSelect = document.getElementById("themeSelect") as HTMLSelectElement;
 const fontSizeSelect = document.getElementById("fontSizeSelect") as HTMLSelectElement;
 const windowChrome = document.getElementById("windowChrome") as HTMLInputElement;
 const downloadBtn = document.getElementById("downloadBtn") as HTMLButtonElement;
+const copySvgBtn = document.getElementById("copySvgBtn") as HTMLButtonElement;
+const loadExampleBtn = document.getElementById("loadExampleBtn") as HTMLButtonElement;
+const themePalette = document.getElementById("themePalette") as HTMLDivElement;
 const dropZone = document.getElementById("dropZone") as HTMLDivElement;
 const fileInput = document.getElementById("fileInput") as HTMLInputElement;
 const eventCount = document.getElementById("eventCount") as HTMLSpanElement;
 const svgSize = document.getElementById("svgSize") as HTMLSpanElement;
 
 let currentSVG = "";
+
+// Hardcoded example .cast content
+const EXAMPLE_CAST = `{"version":2,"width":60,"height":12,"timestamp":1700000000}
+[0.3,"o","\\u001b[1;32m$\\u001b[0m echo \\"Hello from termsnap!\\"\\r\\n"]
+[0.8,"o","Hello from termsnap!\\r\\n"]
+[1.2,"o","\\u001b[1;32m$\\u001b[0m "]
+[1.8,"o","ls -la\\r\\n"]
+[2.0,"o","total 28\\r\\n"]
+[2.05,"o","drwxr-xr-x  4 user user 4096 Jan  1 12:00 \\u001b[1;34m.\\u001b[0m\\r\\n"]
+[2.1,"o","drwxr-xr-x  3 user user 4096 Jan  1 11:00 \\u001b[1;34m..\\u001b[0m\\r\\n"]
+[2.15,"o","-rw-r--r--  1 user user  512 Jan  1 12:00 \\u001b[0;32mREADME.md\\u001b[0m\\r\\n"]
+[2.2,"o","-rwxr-xr-x  1 user user 8192 Jan  1 12:00 \\u001b[1;31mapp\\u001b[0m\\r\\n"]
+[2.25,"o","drwxr-xr-x  2 user user 4096 Jan  1 12:00 \\u001b[1;34msrc\\u001b[0m\\r\\n"]
+[2.8,"o","\\u001b[1;32m$\\u001b[0m "]
+[3.5,"o","cat README.md\\r\\n"]
+[3.7,"o","\\u001b[1;36m# termsnap\\u001b[0m\\r\\n"]
+[3.75,"o","Record terminals, export \\u001b[1;33manimated SVGs\\u001b[0m.\\r\\n"]
+[4.3,"o","\\u001b[1;32m$\\u001b[0m "]
+[5.0,"o","\\u001b[5m_\\u001b[0m"]`;
 
 // Populate theme select
 for (const [id, theme] of Object.entries(themes)) {
@@ -293,11 +315,31 @@ for (const [id, theme] of Object.entries(themes)) {
   themeSelect.appendChild(opt);
 }
 
+function updatePalette() {
+  const theme = themes[themeSelect.value] || themes["one-dark"];
+  themePalette.innerHTML = "";
+  const label = document.createElement("span");
+  label.textContent = "Palette:";
+  label.style.cssText = "font-size:0.8rem;color:#8b949e;margin-right:4px";
+  themePalette.appendChild(label);
+  // Show bg, fg, then the 16 ANSI colors
+  const allColors = [theme.background, theme.foreground, ...theme.colors];
+  for (const color of allColors) {
+    const swatch = document.createElement("span");
+    swatch.style.cssText = `display:inline-block;width:18px;height:18px;border-radius:3px;background:${color};border:1px solid #30363d`;
+    swatch.title = color;
+    themePalette.appendChild(swatch);
+  }
+}
+
+updatePalette();
+
 function render() {
   const text = castInput.value.trim();
   if (!text) {
     preview.innerHTML = '<div class="placeholder">SVG preview will appear here</div>';
     downloadBtn.disabled = true;
+    copySvgBtn.disabled = true;
     eventCount.textContent = "0 events";
     svgSize.textContent = "-";
     return;
@@ -314,11 +356,13 @@ function render() {
     currentSVG = svg;
     preview.innerHTML = svg;
     downloadBtn.disabled = false;
+    copySvgBtn.disabled = false;
     eventCount.textContent = `${cast.events.length} events`;
     svgSize.textContent = `${(svg.length / 1024).toFixed(1)} KB`;
   } catch (e: any) {
     preview.innerHTML = `<div class="placeholder" style="color:#ff7b72">Error: ${e.message}</div>`;
     downloadBtn.disabled = true;
+    copySvgBtn.disabled = true;
   }
 }
 
@@ -329,9 +373,25 @@ castInput.addEventListener("input", () => {
   timeout = setTimeout(render, 300) as unknown as number;
 });
 
-themeSelect.addEventListener("change", render);
+themeSelect.addEventListener("change", () => { updatePalette(); render(); });
 fontSizeSelect.addEventListener("change", render);
 windowChrome.addEventListener("change", render);
+
+// Load example
+loadExampleBtn.addEventListener("click", () => {
+  castInput.value = EXAMPLE_CAST;
+  render();
+});
+
+// Copy SVG
+copySvgBtn.addEventListener("click", () => {
+  if (!currentSVG) return;
+  navigator.clipboard.writeText(currentSVG).then(() => {
+    const orig = copySvgBtn.textContent;
+    copySvgBtn.textContent = "Copied!";
+    setTimeout(() => { copySvgBtn.textContent = orig; }, 1500);
+  });
+});
 
 // Download
 downloadBtn.addEventListener("click", () => {
